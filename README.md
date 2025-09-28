@@ -158,3 +158,63 @@ CUDA disponible: True
 GPU detectada: NVIDIA TITAN RTX
 Versión CUDA en PyTorch: 12.1
 ```
+
+<h2> Ejecución exitosa en el clúster Lab-SB (CIMAT)</h2>
+
+<p>Se logró entrenar y ejecutar un modelo <code>tiny-gpt2</code> en el laboratorio de supercómputo de CIMAT, siguiendo buenas prácticas de organización y uso de SLURM.</p>
+
+<h3> Estructura del proyecto</h3>
+
+<pre>
+proyecto_gpt2/
+├── data/               # Corpus de entrenamiento
+│   └── TOP_corpus_generativo_unificado.txt
+├── src/                # Código fuente
+│   └── train.py
+├── models/             # Modelos locales y checkpoints
+│   └── tiny-gpt2/      # Modelo predescargado desde Hugging Face
+├── logs/               # Logs de SLURM
+│   └── gpt2_finetune-<JOBID>.log
+├── results/            # Métricas y outputs
+└── run_entrenamiento.sh # Script de lanzamiento con SLURM
+</pre>
+
+<h3> Pasos realizados</h3>
+
+<ol>
+  <li>Crear un entorno <code>conda</code> específico para NLP/Transformers:
+    <pre>conda create -n prometheus python=3.11 -y</pre>
+  </li>
+  <li>Instalar dependencias necesarias:
+    <pre>conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia
+pip install transformers datasets protobuf</pre>
+  </li>
+  <li>Descargar el modelo <code>tiny-gpt2</code> en local y subirlo al clúster (ya que los nodos no tienen internet).</li>
+  <li>Colocar el corpus en <code>data/TOP_corpus_generativo_unificado.txt</code>.</li>
+  <li>Lanzar entrenamiento de prueba en CPU desde la terminal:
+    <pre>
+python src/train.py \
+  --model_name "./models/tiny-gpt2" \
+  --train_file "./data/TOP_corpus_generativo_unificado.txt" \
+  --epochs 2
+    </pre>
+  </li>
+</ol>
+
+<h3> Resultados</h3>
+
+<ul>
+  <li>Entrenamiento completado exitosamente (2 épocas, 100 steps).</li>
+  <li>Pérdida final aproximada: <code>train_loss ≈ 10.74</code>.</li>
+  <li>Modelo guardado en: <code>./models/final</code>.</li>
+  <li>Generación de texto con el prompt inicial funcionando.</li>
+</ul>
+
+<h3> Cosas a tomar en cuenta</h3>
+
+<ul>
+  <li>Los nodos del clúster <b>no tienen internet</b>, por lo que los modelos/tokenizers deben descargarse previamente y transferirse completos.</li>
+  <li>Es esencial mantener una <b>estructura de proyecto organizada</b> (data, src, models, logs, results).</li>
+  <li>El uso de <code>run_entrenamiento.sh</code> con <code>sbatch</code> facilita reproducir experimentos en GPU.</li>
+  <li>Los logs de SLURM (<code>logs/gpt2_finetune-*.log</code>) son la primera fuente para depuración.</li>
+</ul>
