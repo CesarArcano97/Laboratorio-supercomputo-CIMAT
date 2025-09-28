@@ -218,3 +218,80 @@ python src/train.py \
   <li>El uso de <code>run_entrenamiento.sh</code> con <code>sbatch</code> facilita reproducir experimentos en GPU.</li>
   <li>Los logs de SLURM (<code>logs/gpt2_finetune-*.log</code>) son la primera fuente para depuración.</li>
 </ul>
+
+_________________________________________________________
+
+# Proyecto llama-beta
+
+Este documento recopila los pasos que funcionaron en el **cluster Lab-SB de CIMAT** para afinar el modelo `TinyLLaMA` sobre un corpus propio (canciones de TOP).
+
+---
+
+## Estructura del proyecto
+
+```arduino
+llama-beta/
+├── data/
+│ └── TOP_corpus_generativo_unificado.txt
+├── logs/ # logs de SLURM
+├── models/
+│ └── tiny-llama-1b/ # modelo predescargado desde laptop
+├── scripts/
+│ └── run_train.sh # script de entrenamiento con SLURM
+└── src/
+└── train.py # script de fine-tuning
+```
+
+### Entrenamiento en el cluster
+
+Se lanza el entrenamiento con SLURM:
+
+```bash
+cd ~/llama-beta
+sbatch scripts/run_train.sh
+```
+
+Revisar si el job sigue en cola o ya corriendo:
+
+```bash
+squeue -u $USER
+```
+
+Monitoreo y logs
+
+Para ver el log en vivo:
+
+```bash
+tail -f logs/llama_beta_train-<JOBID>.log
+```
+
+Al terminar, puedes descargar el log a tu PC (corriendo desde el server):
+
+```bash
+ssh <USUARIO>@el-insurgente.cimat.mx "cat ~/llama-beta/logs/llama_beta_train-<JOBID>.log" > llama_beta_train-<JOBID>.log
+```
+
+### Puedes añadir notificaciones para ver cuando termine tu log
+
+Agregando al script de train.sh:
+
+```bash
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user=tu_correo@cimat.mx
+```
+
+O bien un monitoreo manual:
+```bash
+#!/usr/bin/env bash
+JOBID="$1"
+[ -z "$JOBID" ] && { echo "Uso: $0 <JOBID>"; exit 1; }
+
+echo "Esperando a que termine el job $JOBID..."
+while squeue -j "$JOBID" -h >/dev/null 2>&1; do sleep 60; done
+
+STATE=$(sacct -j "$JOBID" --format=State --noheader | head -n1 | awk '{print $1}')
+[ -z "$STATE" ] && STATE="FINISHED"
+echo -e "Job $JOBID terminó con estado: $STATE\a"
+```
+
+Uso: `scripts/notify_when_done.sh <JOBID>`
