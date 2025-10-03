@@ -295,3 +295,17 @@ echo -e "Job $JOBID terminó con estado: $STATE\a"
 ```
 
 Uso: `scripts/notify_when_done.sh <JOBID>`
+
+### Descarga de datos cluster a máquina externa:
+
+## Descargar resultados a mi PC (fuera de CIMAT)
+
+Cuando se está fuera de CIMAT, se debe usar el **host** indicado y **puerto** indicado en el registro.
+
+#### Opción rápida (`scp`)
+> Nota: la `-P` de puerto es **mayúscula**.
+```bash
+scp -P <PUERTO> -r \
+  <USUARIO>@<HOST>:~/DIRECTORIO-DE-INTERES \
+  /home/USUARIO/
+```
