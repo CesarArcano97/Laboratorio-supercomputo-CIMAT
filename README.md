@@ -309,3 +309,178 @@ scp -P <PUERTO> -r \
   <USUARIO>@<HOST>:~/DIRECTORIO-DE-INTERES \
   /home/USUARIO/
 ```
+# Fine-tuning y Generación Offline con Mistral-7B + Unsloth (LoRA)
+
+Este flujo documenta los pasos funcionales para entrenar y generar letras de canciones **offline** en el servidor **el-insurgente (CIMAT)** utilizando **Mistral-7B-Instruct** con **LoRA eficiente (Unsloth)**.
+
+---
+
+## 1. Estructura del proyecto
+
+```
+mistral-project/
+│
+├── data/
+│   └── processed/
+│       └── lyrics_train.jsonl          ← corpus a nivel texto
+│
+├── models/
+│   ├── base/
+│   │   └── Mistral-7B-Instruct-v0.2    ← modelo base descargado
+│   └── finetuned/
+│       └── t21p_lr2e-4_ep3_bs2x4_YYYYMMDD_HHMMSS/
+│           └── final_model/            ← adaptadores LoRA + tokenizer
+│
+├── results/
+│   └── generations/                    ← letras generadas
+│
+├── logs/
+│   └── train_.out, generate_.out
+│
+└── src/
+    ├── train/train_mistral_offline.py
+    └── generate/generate_mistral_offline.py
+```
+
+---
+
+## 2. Entorno Conda funcional
+
+```bash
+conda create -n mistral-env python=3.10 -y
+conda activate mistral-env
+
+pip install torch==2.8.0 \
+            transformers==4.51.3 \
+            accelerate==1.1.1 \
+            trl==0.9.4 \
+            peft==0.11.1 \
+            unsloth==2025.9.7 \
+            bitsandbytes==0.43.1 \
+            xformers==0.0.32.post2 \
+            datasets==2.21.0
+```
+**Versión estable confirmada:**
+- **Torch 2.8.0** + **CUDA 12.8**
+- **Unsloth 2025.9.7** compatible con Mistral 7B.
+
+---
+
+## 3. Entrenamiento offline con LoRA
+
+**Archivo:** `src/train/train_mistral_offline.py`
+
+**Puntos clave:**
+
+- **Modo totalmente offline** configurado con:
+  ```python
+  import os
+  os.environ["HF_HUB_OFFLINE"] = "1"
+  os.environ["TRANSFORMERS_OFFLINE"] = "1"
+  os.environ["HF_DATASETS_OFFLINE"] = "1"
+  os.environ["UNSLOTH_FORCE_OFFLINE"] = "1"
+  ```
+- **Carga local** desde: `~/mistral-project/models/base/Mistral-7B-Instruct-v0.2`
+- **LoRA** aplicada sólo en proyecciones Q/K/V/O (≈ 1 % de parámetros entrenados).
+- **Gradiente acumulado** para lotes pequeños (`grad_accum=4`).
+- **Guardado automático** de adaptadores + tokenizer en: `models/finetuned/<run_name>/final_model/`
+
+**Ejemplo de comando Slurm:**
+```bash
+#!/bin/bash
+#SBATCH --job-name=train_mistral
+#SBATCH --partition=GPU
+#SBATCH --gres=gpu:1
+#SBATCH --time=02:00:00
+#SBATCH --output=logs/train_%j.out
+#SBATCH --error=logs/train_%j.err
+
+source ~/miniconda3/etc/profile.d/conda.sh
+conda activate mistral-env
+cd ~/mistral-project/src/train
+
+python train_mistral_offline.py
+```
+
+**Resultado exitoso:**
+```bash
+Trainable parameters = 13.6M (0.19% of total)
+train_loss ≈ 1.59
+Modelo guardado en: models/finetuned/.../final_model/
+```
+
+---
+
+## 🎤 4. Generación offline
+
+**Archivo:** `src/generate/generate_mistral_offline.py`
+
+- Combina modelo base + adaptadores LoRA vía `PeftModel.from_pretrained`.
+- Usa `device_map="auto"` (carga en GPU automáticamente).
+- **Prompts configurables:**
+  ```python
+  prompts = [
+      "In the city lights I find myself",
+      "They say I'm broken but I'm breathing",
+      "Sometimes my shadow sings louder than I do"
+  ]
+  ```
+- **Parámetros de sampling:**
+  ```python
+  max_new_tokens=220, temperature=0.9, top_p=0.95, do_sample=True
+  ```
+- Letras generadas en: `results/generations/song_1.txt`, `song_2.txt`, etc.
+
+**Ejemplo de Slurm de inferencia:**
+```bash
+#!/bin/bash
+#SBATCH --job-name=generate_mistral
+#SBATCH --partition=GPU
+#SBATCH --gres=gpu:1
+#SBATCH --time=00:10:00
+#SBATCH --output=logs/generate_%j.out
+#SBATCH --error=logs/generate_%j.err
+
+source ~/miniconda3/etc/profile.d/conda.sh
+conda activate mistral-env
+cd ~/mistral-project/src/generate
+
+python generate_mistral_offline.py
+```
+**Salida esperada:**
+```bash
+🔹 Cargando modelo base en GPU...
+🔹 Cargando adaptadores LoRA...
+Generando canción 1...
+Guardada: results/generations/song_1.txt
+...
+```
+
+---
+
+## 5. Ejemplo de letra generada
+
+**Prompt:** “In the city lights I find myself”
+
+```
+In the city lights I find myself
+I don't know why
+I wanna stay inside tonight
+I think it's right
+But my heart keeps telling me that I should go...
+```
+Original, coherente y estilísticamente alineada con Twenty One Pilots.
+Sin coincidencias literales con letras oficiales (verificado manualmente).
+
+---
+
+## 6. Notas finales
+
+- **Unsloth con LoRA** ofrece ≈ **2× menor VRAM** y entrenamiento estable en 1 GPU TITAN RTX (24 GB).
+- Todos los procesos se ejecutaron **offline**, sin conexión a Hugging Face.
+- La ruta más reciente del modelo entrenado:
+  ```bash
+  ~/mistral-project/models/finetuned/t21p_lr2e-4_ep3_bs2x4_20251004_033651/final_model
+  ```
+
+**Estado actual del pipeline:** Fine-tuning completo + generación funcional offline.
